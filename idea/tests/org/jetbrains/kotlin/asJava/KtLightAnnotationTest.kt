@@ -278,7 +278,7 @@ class KtLightAnnotationTest : KotlinLightCodeInsightFixtureTestCase() {
         val annotations = myFixture.findClass("MyAnnotated").expectAnnotations(1)
         annotations[0].let { annotation ->
             val annotationAttributeVal = annotation.findAttributeValue("value") as PsiElement
-            assertTextAndRange("(Inner())", annotationAttributeVal)
+            assertTextAndRange("Inner()", annotationAttributeVal)
             annotationAttributeVal as PsiArrayInitializerMemberValue
             annotationAttributeVal.initializers[0].let { innerAnnotationAttributeVal ->
                 assertTextAndRange("Inner()", innerAnnotationAttributeVal)
@@ -423,7 +423,7 @@ class KtLightAnnotationTest : KotlinLightCodeInsightFixtureTestCase() {
         }
         annotations[1].let { annotation ->
             val annotationAttributeVal = annotation.findAttributeValue("value") as PsiElement
-            assertTextAndRange("(\"1\")", annotationAttributeVal)
+            assertTextAndRange("\"1\"", annotationAttributeVal)
             annotationAttributeVal as PsiArrayInitializerMemberValue
             annotationAttributeVal.initializers[0].let { innerAnnotationAttributeVal ->
                 assertTextAndRange("\"1\"", innerAnnotationAttributeVal)
@@ -483,7 +483,7 @@ class KtLightAnnotationTest : KotlinLightCodeInsightFixtureTestCase() {
 
         val annotations = myFixture.findClass("AnnotatedClass").expectAnnotations(1)
         val annotation = annotations.first()
-        assertTextAndRange("", annotation.findAttributeValue("i")!!)
+        assertTextAndRange("true", annotation.findAttributeValue("i")!!)
     }
 
     fun testMissingDefault() {
