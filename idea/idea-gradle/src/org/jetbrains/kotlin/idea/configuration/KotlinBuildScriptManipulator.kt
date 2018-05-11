@@ -329,6 +329,9 @@ class KotlinBuildScriptManipulator(private val kotlinScript: KtFile) : GradleBui
         fun getKotlinModuleDependencySnippet(artifactId: String, version: String? = null): String =
             "kotlinModule(\"${artifactId.removePrefix("kotlin-")}\", ${version?.let { "\"$it\"" } ?: GSK_KOTLIN_VERSION_PROPERTY_NAME})"
 
+        fun getKotlinDependencySnippet(artifactId: String): String =
+            "kotlin(\"${artifactId.removePrefix("kotlin-")}\")"
+
         fun getCompileDependencySnippet(
             groupId: String,
             artifactId: String,

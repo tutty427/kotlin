@@ -195,12 +195,7 @@ class GroovyBuildScriptManipulator(private val groovyScript: GroovyFile) : Gradl
     private fun getApplyStatement(file: GroovyFile): GrApplicationStatement? =
         file.getChildrenOfType<GrApplicationStatement>().find { it.invokedExpression.text == "apply" }
 
-    private fun PsiElement.getBlockByName(name: String): GrClosableBlock? {
-        return getChildrenOfType<GrMethodCallExpression>()
-            .filter { it.closureArguments.isNotEmpty() }
-            .find { it.invokedExpression.text == name }
-            ?.let { it.closureArguments[0] }
-    }
+
 
     private fun GrClosableBlock.addRepository(version: String): Boolean {
         val repository = getRepositoryForVersion(version)
@@ -231,22 +226,6 @@ class GroovyBuildScriptManipulator(private val groovyScript: GroovyFile) : Gradl
     private fun GrStatementOwner.getBuildScriptDependenciesBlock(): GrClosableBlock =
         getBuildScriptBlock().getBlockOrCreate("dependencies")
 
-    private fun GrStatementOwner.getBlockOrCreate(
-        name: String,
-        customInsert: GrStatementOwner.(newBlock: PsiElement) -> Boolean = { false }
-    ): GrClosableBlock {
-        var block = getBlockByName(name)
-        if (block == null) {
-            val factory = GroovyPsiElementFactory.getInstance(project)
-            val newBlock = factory.createExpressionFromText("$name{\n}\n")
-            if (!customInsert(newBlock)) {
-                addAfter(newBlock, statements.lastOrNull() ?: firstChild)
-            }
-            block = getBlockByName(name)!!
-        }
-        return block
-    }
-
     private fun GrClosableBlock.addOrReplaceExpression(snippet: String, predicate: (GrStatement) -> Boolean) {
         statements.firstOrNull(predicate)?.let { stmt ->
             stmt.replaceWithStatementFromText(snippet)
@@ -255,28 +234,8 @@ class GroovyBuildScriptManipulator(private val groovyScript: GroovyFile) : Gradl
         addLastExpressionInBlockIfNeeded(snippet)
     }
 
-    private fun GrClosableBlock.addLastExpressionInBlockIfNeeded(expressionText: String): Boolean =
-        addExpressionInBlockIfNeeded(expressionText, false)
-
     private fun GrClosableBlock.addFirstExpressionInBlockIfNeeded(expressionText: String): Boolean =
         addExpressionInBlockIfNeeded(expressionText, true)
-
-    private fun GrClosableBlock.addExpressionInBlockIfNeeded(expressionText: String, isFirst: Boolean): Boolean {
-        if (text.contains(expressionText)) return false
-        val newStatement = GroovyPsiElementFactory.getInstance(project).createExpressionFromText(expressionText)
-        CodeStyleManager.getInstance(project).reformat(newStatement)
-        if (!isFirst && statements.isNotEmpty()) {
-            val lastStatement = statements[statements.size - 1]
-            if (lastStatement != null) {
-                addAfter(newStatement, lastStatement)
-            }
-        } else {
-            if (firstChild != null) {
-                addAfter(newStatement, firstChild)
-            }
-        }
-        return true
-    }
 
     private fun getGroovyApplyPluginDirective(pluginName: String) = "apply plugin: '$pluginName'"
 
@@ -291,5 +250,53 @@ class GroovyBuildScriptManipulator(private val groovyScript: GroovyFile) : Gradl
         private val VERSION = String.format("ext.kotlin_version = '%s'", VERSION_TEMPLATE)
         private val GRADLE_PLUGIN_ID = "kotlin-gradle-plugin"
         private val CLASSPATH = "classpath \"$KOTLIN_GROUP_ID:$GRADLE_PLUGIN_ID:\$kotlin_version\""
+
+        private fun PsiElement.getBlockByName(name: String): GrClosableBlock? {
+            return getChildrenOfType<GrMethodCallExpression>()
+                .filter { it.closureArguments.isNotEmpty() }
+                .find { it.invokedExpression.text == name }
+                ?.let { it.closureArguments[0] }
+        }
+
+        fun GrStatementOwner.getBlockOrCreate(
+            name: String,
+            customInsert: GrStatementOwner.(newBlock: PsiElement) -> Boolean = { false }
+        ): GrClosableBlock {
+            var block = getBlockByName(name)
+            if (block == null) {
+                val factory = GroovyPsiElementFactory.getInstance(project)
+                val newBlock = factory.createExpressionFromText("$name{\n}\n")
+                if (!customInsert(newBlock)) {
+                    addAfter(newBlock, statements.lastOrNull() ?: firstChild)
+                }
+                block = getBlockByName(name)!!
+            }
+            return block
+        }
+
+        fun GrStatementOwner.getBlockOrPrepend(name: String) = getBlockOrCreate(name) { newBlock ->
+            addAfter(newBlock, null)
+            true
+        }
+
+        fun GrClosableBlock.addLastExpressionInBlockIfNeeded(expressionText: String): Boolean =
+            addExpressionInBlockIfNeeded(expressionText, false)
+
+        private fun GrClosableBlock.addExpressionInBlockIfNeeded(expressionText: String, isFirst: Boolean): Boolean {
+            if (text.contains(expressionText)) return false
+            val newStatement = GroovyPsiElementFactory.getInstance(project).createExpressionFromText(expressionText)
+            CodeStyleManager.getInstance(project).reformat(newStatement)
+            if (!isFirst && statements.isNotEmpty()) {
+                val lastStatement = statements[statements.size - 1]
+                if (lastStatement != null) {
+                    addAfter(newStatement, lastStatement)
+                }
+            } else {
+                if (firstChild != null) {
+                    addAfter(newStatement, firstChild)
+                }
+            }
+            return true
+        }
     }
 }

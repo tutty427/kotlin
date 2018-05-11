@@ -17,29 +17,113 @@
 package org.jetbrains.kotlin.idea.configuration
 
 import com.intellij.framework.FrameworkTypeEx
+import com.intellij.framework.addSupport.FrameworkSupportInModuleConfigurable
 import com.intellij.framework.addSupport.FrameworkSupportInModuleProvider
+import com.intellij.ide.util.frameworkSupport.FrameworkSupportModel
 import com.intellij.openapi.externalSystem.model.project.ProjectId
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.roots.ModifiableModelsProvider
 import com.intellij.openapi.roots.ModifiableRootModel
+import com.intellij.openapi.util.Key
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.codeStyle.CodeStyleManager
 import org.jetbrains.kotlin.idea.KotlinIcons
+import org.jetbrains.kotlin.idea.configuration.GroovyBuildScriptManipulator.Companion.addLastExpressionInBlockIfNeeded
+import org.jetbrains.kotlin.idea.configuration.GroovyBuildScriptManipulator.Companion.getBlockOrCreate
+import org.jetbrains.kotlin.idea.configuration.GroovyBuildScriptManipulator.Companion.getBlockOrPrepend
 import org.jetbrains.kotlin.idea.configuration.KotlinBuildScriptManipulator.Companion.GSK_KOTLIN_VERSION_PROPERTY_NAME
 import org.jetbrains.kotlin.idea.configuration.KotlinBuildScriptManipulator.Companion.getCompileDependencySnippet
+import org.jetbrains.kotlin.idea.configuration.KotlinBuildScriptManipulator.Companion.getKotlinDependencySnippet
 import org.jetbrains.kotlin.idea.configuration.KotlinBuildScriptManipulator.Companion.getKotlinGradlePluginClassPathSnippet
+import org.jetbrains.kotlin.idea.core.copied
+import org.jetbrains.kotlin.idea.refactoring.toPsiFile
 import org.jetbrains.kotlin.idea.versions.*
+import org.jetbrains.kotlin.psi.UserDataProperty
 import org.jetbrains.plugins.gradle.frameworkSupport.BuildScriptDataBuilder
 import org.jetbrains.plugins.gradle.frameworkSupport.KotlinDslGradleFrameworkSupportProvider
+import org.jetbrains.plugins.gradle.service.project.wizard.GradleModuleBuilder
+import org.jetbrains.plugins.gradle.util.GradleConstants
+import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
+import java.io.File
 import javax.swing.Icon
+import javax.swing.JComponent
 
 abstract class KotlinDslGradleKotlinFrameworkSupportProvider(
     val frameworkTypeId: String,
     val displayName: String,
-    val frameworkIcon: Icon
+    val frameworkIcon: Icon,
+    private val withPluginsBlock: Boolean
 ) : KotlinDslGradleFrameworkSupportProvider() {
+    companion object {
+        private var Module.gradleModuleBuilder: GradleModuleBuilder? by UserDataProperty(Key.create("GRADLE_MODULE_BUILDER"))
+    }
+
     override fun getFrameworkType(): FrameworkTypeEx = object : FrameworkTypeEx(frameworkTypeId) {
         override fun getIcon(): Icon = frameworkIcon
         override fun getPresentableName(): String = displayName
         override fun createProvider(): FrameworkSupportInModuleProvider = this@KotlinDslGradleKotlinFrameworkSupportProvider
+    }
+
+    override fun createConfigurable(model: FrameworkSupportModel): FrameworkSupportInModuleConfigurable {
+        return object : FrameworkSupportInModuleConfigurable() {
+            override fun createComponent(): JComponent? {
+                return this@KotlinDslGradleKotlinFrameworkSupportProvider.createComponent()
+            }
+
+            override fun addSupport(
+                module: Module,
+                rootModel: ModifiableRootModel,
+                modifiableModelsProvider: ModifiableModelsProvider
+            ) {
+                val buildScriptData = GradleModuleBuilder.getBuildScriptData(module)
+                if (buildScriptData != null) {
+                    val builder = model.moduleBuilder
+                    val projectId = if (builder is GradleModuleBuilder)
+                        builder.projectId
+                    else
+                        ProjectId(null, module.name, null)
+
+                    try {
+                        module.gradleModuleBuilder = builder as? GradleModuleBuilder
+                        this@KotlinDslGradleKotlinFrameworkSupportProvider.addSupport(
+                                projectId,
+                                module,
+                                rootModel,
+                                modifiableModelsProvider,
+                                buildScriptData
+                        )
+                    } finally {
+                        module.gradleModuleBuilder = null
+                    }
+                }
+            }
+        }
+    }
+
+    private fun findSettingsGradleFile(module: Module): VirtualFile? {
+        val contentEntryPath = module.gradleModuleBuilder?.contentEntryPath ?: return null
+        if (contentEntryPath.isEmpty()) return null
+        val contentRootDir = File(contentEntryPath)
+        val modelContentRootDir = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(contentRootDir) ?: return null
+        return modelContentRootDir.findChild(GradleConstants.SETTINGS_FILE_NAME)
+                ?: module.project.baseDir.findChild(GradleConstants.SETTINGS_FILE_NAME)
+    }
+
+    // Circumvent write actions and modify the file directly
+    // TODO: Get rid of this hack when IDEA API allows manipulation of settings script similarly to the main script itself
+    private fun addRepositoryToSettings(repository: String, module: Module) {
+        val settingsFile = findSettingsGradleFile(module) ?: return
+        val project = module.project
+        val settingsPsi = settingsFile.toPsiFile(project) as? GroovyFile ?: return
+        val settingsPsiCopy = settingsPsi.copied().apply {
+            getBlockOrPrepend("pluginManagement")
+                .getBlockOrCreate("repositories")
+                .addLastExpressionInBlockIfNeeded(repository)
+            CodeStyleManager.getInstance(project).reformat(this)
+        }
+        VfsUtil.saveText(settingsFile, settingsPsiCopy.text)
     }
 
     override fun addSupport(
@@ -57,20 +141,31 @@ abstract class KotlinDslGradleKotlinFrameworkSupportProvider(
 
         if (additionalRepository != null) {
             val repository = additionalRepository.toKotlinRepositorySnippet()
-            buildScriptData.addBuildscriptRepositoriesDefinition(repository)
+            if (withPluginsBlock) {
+                addRepositoryToSettings(repository, module)
+            } else {
+                buildScriptData.addBuildscriptRepositoriesDefinition(repository)
+            }
             buildScriptData.addRepositoriesDefinition("mavenCentral()")
             buildScriptData.addRepositoriesDefinition(repository)
         }
 
-        buildScriptData
-            .addPropertyDefinition("val $GSK_KOTLIN_VERSION_PROPERTY_NAME: String by extra")
-            .addPluginDefinition(getPluginDefinition())
-            .addBuildscriptRepositoriesDefinition("mavenCentral()")
-            .addRepositoriesDefinition("mavenCentral()")
-            // TODO: in gradle > 4.1 this could be single declaration e.g. 'val kotlin_version: String by extra { "1.1.11" }'
-            .addBuildscriptPropertyDefinition("var $GSK_KOTLIN_VERSION_PROPERTY_NAME: String by extra\n    $GSK_KOTLIN_VERSION_PROPERTY_NAME = \"$kotlinVersion\"")
-            .addDependencyNotation(getRuntimeLibrary(rootModel))
-            .addBuildscriptDependencyNotation(getKotlinGradlePluginClassPathSnippet())
+        if (withPluginsBlock) {
+            buildScriptData
+                .addPluginDefinitionInPluginsGroup(getPluginDefinition() + " version \"$kotlinVersion\"")
+                .addDependencyNotation(getRuntimeLibrary(rootModel))
+        }
+        else {
+            buildScriptData
+                .addPropertyDefinition("val $GSK_KOTLIN_VERSION_PROPERTY_NAME: String by extra")
+                .addPluginDefinition(getPluginDefinition())
+                .addBuildscriptRepositoriesDefinition("mavenCentral()")
+                .addRepositoriesDefinition("mavenCentral()")
+                // TODO: in gradle > 4.1 this could be single declaration e.g. 'val kotlin_version: String by extra { "1.1.11" }'
+                .addBuildscriptPropertyDefinition("var $GSK_KOTLIN_VERSION_PROPERTY_NAME: String by extra\n    $GSK_KOTLIN_VERSION_PROPERTY_NAME = \"$kotlinVersion\"")
+                .addDependencyNotation(getRuntimeLibrary(rootModel))
+                .addBuildscriptDependencyNotation(getKotlinGradlePluginClassPathSnippet())
+        }
     }
 
     private fun RepositoryDescription.toKotlinRepositorySnippet() = "maven { setUrl(\"$url\") }"
@@ -81,12 +176,12 @@ abstract class KotlinDslGradleKotlinFrameworkSupportProvider(
 }
 
 class KotlinDslGradleKotlinJavaFrameworkSupportProvider :
-    KotlinDslGradleKotlinFrameworkSupportProvider("KOTLIN", "Kotlin (Java)", KotlinIcons.SMALL_LOGO) {
+    KotlinDslGradleKotlinFrameworkSupportProvider("KOTLIN", "Kotlin (Java)", KotlinIcons.SMALL_LOGO, true) {
 
-    override fun getPluginDefinition() = "plugin(\"${KotlinGradleModuleConfigurator.KOTLIN}\")"
+    override fun getPluginDefinition() = "kotlin(\"jvm\")"
 
     override fun getRuntimeLibrary(rootModel: ModifiableRootModel) =
-        getCompileDependencySnippet(KOTLIN_GROUP_ID, getStdlibArtifactId(rootModel.sdk, bundledRuntimeVersion()))
+        "compile(${getKotlinDependencySnippet(getStdlibArtifactId(rootModel.sdk, bundledRuntimeVersion()))})"
 
     override fun addSupport(
         projectId: ProjectId,
@@ -106,7 +201,7 @@ class KotlinDslGradleKotlinJavaFrameworkSupportProvider :
 }
 
 class KotlinDslGradleKotlinJSFrameworkSupportProvider :
-    KotlinDslGradleKotlinFrameworkSupportProvider("KOTLIN_JS", "Kotlin (JavaScript)", KotlinIcons.JS) {
+    KotlinDslGradleKotlinFrameworkSupportProvider("KOTLIN_JS", "Kotlin (JavaScript)", KotlinIcons.JS, false) {
 
     override fun getPluginDefinition(): String = "plugin(\"${KotlinJsGradleModuleConfigurator.KOTLIN_JS}\")"
 
