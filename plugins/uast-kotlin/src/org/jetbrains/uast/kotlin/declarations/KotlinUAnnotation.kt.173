@@ -106,7 +106,7 @@ class KotlinUAnnotation(
     givenParent: UElement?
 ) : KotlinUAnnotationBase(annotationEntry, givenParent), UAnnotation {
 
-    override val javaPsi by lazy { annotationEntry.toLightAnnotation() }
+    override val javaPsi = annotationEntry.toLightAnnotation()
 
     private val resolvedAnnotation: AnnotationDescriptor? by lz { annotationEntry.analyze()[BindingContext.ANNOTATION, annotationEntry] }
 

@@ -35,17 +35,11 @@ class UastLightIdentifier(lightOwner: PsiNameIdentifierOwner, ktDeclaration: KtN
 }
 
 class KotlinUIdentifier private constructor(
-    private val javaPsiProvider: () -> PsiElement?,
-    private val _sourcePsi: PsiElement?,
-    private val psiProvider: () -> PsiElement?,
+    override val javaPsi: PsiElement?,
+    override val sourcePsi: PsiElement?,
+    override val psi: PsiElement?,
     givenParent: UElement?
-) : UIdentifier(_sourcePsi, givenParent) {
-
-    override val javaPsi: PsiElement? by lazy { javaPsiProvider() }
-    override val psi: PsiElement? by lazy { psiProvider() }
-
-    override val sourcePsi: PsiElement?
-        get() = _sourcePsi
+) : UIdentifier(psi, givenParent) {
 
     init {
         if (ApplicationManager.getApplication().isUnitTestMode && !acceptableSourcePsi(sourcePsi))
@@ -76,13 +70,6 @@ class KotlinUIdentifier private constructor(
         return null
     }
 
-    constructor(javaPsi: PsiElement?, sourcePsi: PsiElement?, uastParent: UElement?) : this({ javaPsi }, sourcePsi, uastParent)
-    constructor(javaPsiProvider: () -> PsiElement?, sourcePsi: PsiElement?, uastParent: UElement?) : this(
-        javaPsiProvider,
-        sourcePsi,
-        javaPsiProvider,
-        uastParent
-    )
-
-    constructor(sourcePsi: PsiElement?, uastParent: UElement?) : this({ null }, sourcePsi, { sourcePsi }, uastParent)
+    constructor(javaPsi: PsiElement?, sourcePsi: PsiElement?, uastParent: UElement?) : this(javaPsi, sourcePsi, javaPsi, uastParent)
+    constructor(sourcePsi: PsiElement?, uastParent: UElement?) : this(null, sourcePsi, sourcePsi, uastParent)
 }
