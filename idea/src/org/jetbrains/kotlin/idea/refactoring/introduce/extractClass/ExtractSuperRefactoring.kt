@@ -235,7 +235,7 @@ class ExtractSuperRefactoring(
         val prototype = psiFactory.createClass("$kind $newClassName")
         val newClass = if (targetParent is PsiDirectory) {
             val template = FileTemplateManager.getInstance(project).getInternalTemplate("Kotlin File")
-            val newFile = NewKotlinFileAction.createFileFromTemplate(extractInfo.targetFileName, template, targetParent) as KtFile
+            val newFile = NewKotlinFileAction.createFileFromTemplateInternal(extractInfo.targetFileName, template, targetParent) as KtFile
             newFile.add(prototype) as KtClass
         }
         else {
