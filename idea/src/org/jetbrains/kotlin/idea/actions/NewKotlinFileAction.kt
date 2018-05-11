@@ -108,13 +108,8 @@ class NewKotlinFileAction : CreateFileFromTemplateAction(
 
     override fun startInWriteAction() = false
 
-    override fun createFileFromTemplate(name: String, template: FileTemplate, dir: PsiDirectory): PsiFile? {
-        if (template.name == "Kotlin Class" && name.contains("Abstract")) {
-            val abstractTemplate = FileTemplateManager.getInstance(dir.project).getInternalTemplate("Kotlin Abstract Class")
-            return createFileFromTemplateInternal(name, abstractTemplate, dir)
-        }
-        return createFileFromTemplateInternal(name, template, dir)
-    }
+    override fun createFileFromTemplate(name: String, template: FileTemplate, dir: PsiDirectory) =
+        Companion.createFileFromTemplate(name, template, dir)
 
     companion object {
         private fun findOrCreateTarget(dir: PsiDirectory, name: String, directorySeparators: Array<Char>): Pair<String, PsiDirectory> {
@@ -160,7 +155,7 @@ class NewKotlinFileAction : CreateFileFromTemplateAction(
             return element?.containingFile
         }
 
-        fun createFileFromTemplateInternal(name: String, template: FileTemplate, dir: PsiDirectory): PsiFile? {
+        fun createFileFromTemplate(name: String, template: FileTemplate, dir: PsiDirectory): PsiFile? {
             val directorySeparators = if (template.name == "Kotlin File") arrayOf('/', '\\') else arrayOf('/', '\\', '.')
             val (className, targetDir) = findOrCreateTarget(dir, name, directorySeparators)
 

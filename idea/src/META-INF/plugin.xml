@@ -367,7 +367,6 @@
     <internalFileTemplate name="Kotlin Enum"/>
     <internalFileTemplate name="Kotlin Interface"/>
     <internalFileTemplate name="Kotlin Script"/>
-    <internalFileTemplate name="Kotlin Abstract Class"/>
 
     <gotoSymbolContributor implementation="org.jetbrains.kotlin.idea.goto.KotlinGotoSymbolContributor"/>
     <gotoClassContributor implementation="org.jetbrains.kotlin.idea.goto.KotlinGotoClassContributor"/>
