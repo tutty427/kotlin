@@ -39,6 +39,8 @@ import org.jetbrains.kotlin.resolve.descriptorUtil.declaresOrInheritsDefaultValu
 import org.jetbrains.kotlin.resolve.source.getPsi
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.typeUtil.TypeNullability
+import org.jetbrains.kotlin.types.typeUtil.isTypeParameter
+import org.jetbrains.kotlin.types.typeUtil.isUnit
 import org.jetbrains.kotlin.types.typeUtil.nullability
 
 private val LOG = Logger.getInstance("#org.jetbrains.kotlin.asJava.elements.lightAnnotations")
@@ -227,12 +229,15 @@ class KtLightNullabilityAnnotation(val member: KtLightElement<*, PsiModifierList
         val annotatedElement = member.kotlinOrigin
                 ?: // it is out of our hands
                 return getClsNullabilityAnnotation(member)?.qualifiedName
-        val nullability = getTargetType(annotatedElement)?.nullability()
+        val kotlinType = getTargetType(annotatedElement) ?: return null
+        if (kotlinType.isUnit() || KotlinBuiltIns.isPrimitiveType(kotlinType)) return null // no need to annotate them explicitly
+        if (kotlinType.isTypeParameter() && !kotlinType.isMarkedNullable) return null
+
+        val nullability = kotlinType.nullability()
         return when (nullability) {
             TypeNullability.NOT_NULL -> NotNull::class.java.name
             TypeNullability.NULLABLE -> Nullable::class.java.name
             TypeNullability.FLEXIBLE -> null
-            null -> null
         }
     }
 
@@ -244,6 +249,9 @@ class KtLightNullabilityAnnotation(val member: KtLightElement<*, PsiModifierList
         }
         if (annotatedElement is KtCallableDeclaration) {
             annotatedElement.typeReference?.getType()?.let { return it }
+        }
+        if (annotatedElement is KtNamedFunction) {
+            annotatedElement.bodyExpression?.let { it.getType(it.analyze()) }?.let { return it }
         }
         if (annotatedElement is KtProperty) {
             annotatedElement.initializer?.let { it.getType(it.analyze()) }?.let { return it }
