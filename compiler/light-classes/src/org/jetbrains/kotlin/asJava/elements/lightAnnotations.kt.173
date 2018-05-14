@@ -233,7 +233,10 @@ class KtLightNullabilityAnnotation(val member: KtLightElement<*, PsiModifierList
                 return getClsNullabilityAnnotation(member)?.qualifiedName
         val kotlinType = getTargetType(annotatedElement) ?: return null
         if (kotlinType.isUnit() || KotlinBuiltIns.isPrimitiveType(kotlinType)) return null // no need to annotate them explicitly
-        if (kotlinType.isTypeParameter() && !kotlinType.isMarkedNullable) return null
+        if (kotlinType.isTypeParameter()) {
+            if (!TypeUtils.hasNullableSuperType(kotlinType)) return NotNull::class.java.name
+            if (!kotlinType.isMarkedNullable) return null
+        }
 
         val nullability = kotlinType.nullability()
         return when (nullability) {
