@@ -333,7 +333,7 @@ internal object KotlinConverter {
                 val expression = element.kotlinOrigin
                 when (expression) {
                     is KtExpression -> KotlinConverter.convertExpression(expression, givenParent, requiredType)
-                    else -> el<UExpression> { UastEmptyExpression(givenParent) }
+                    else -> el<UExpression> { UastEmptyExpression }
                 }
             }
             is KtLiteralStringTemplateEntry, is KtEscapeStringTemplateEntry -> el<ULiteralExpression>(build(::KotlinStringULiteralExpression))
